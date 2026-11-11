@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADO 3 - Colisão perfeitamente inelástica</title>
+<style>
+body{font-family:Arial,sans-serif;margin:20px;color:#222;background:#fff}
+h1{font-size:23px}section{border:1px solid #ccc;padding:14px;margin:14px 0}
+canvas{width:100%;height:220px;border:1px solid #ccc;display:block}
+.controls,.results{display:grid;grid-template-columns:repeat(2,minmax(170px,1fr));gap:12px}
+label{display:block}input[type=range]{width:100%}
+button{padding:7px 14px;margin:8px 5px 0 0}
+.result{border:1px solid #ddd;padding:8px}
+.bar{height:14px;background:#ddd;margin:5px 0}.bar span{display:block;height:14px;background:#4779b8}
+@media(max-width:520px){.controls,.results{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>ADO 3 - Colisão perfeitamente inelástica</h1>
+<p>Física: Práticas Extensivas | Opção B</p>
+<section>
+<h2>Simulação</h2>
+<canvas id="scene"></canvas>
+<p id="message">Os blocos se movimentam em MRU antes do choque e seguem unidos depois dele.</p>
+<button id="pause">Pausar</button><button id="reset">Reiniciar</button>
+</section>
+<section>
+<h2>Parâmetros</h2>
+<div class="controls">
+<label>Massa do bloco 1: <b id="m1out"></b> kg<input id="m1" type="range" min=".5" max="10" step=".1" value="2"></label>
+<label>Massa do bloco 2: <b id="m2out"></b> kg<input id="m2" type="range" min=".5" max="10" step=".1" value="3"></label>
+<label>Velocidade inicial v1: <b id="v1out"></b> m/s<input id="v1" type="range" min="-5" max="10" step=".1" value="5"></label>
+<label>Velocidade inicial v2: <b id="v2out"></b> m/s<input id="v2" type="range" min="-5" max="10" step=".1" value="0"></label>
+<label>Tempo de contato: <b id="dtout"></b> ms<input id="dt" type="range" min="1" max="100" step="1" value="10"></label>
+</div>
+</section>
+<section>
+<h2>Painel de resultados</h2>
+<div class="results">
+<div class="result">Velocidades antes (v1, v2): <b id="vin"></b></div>
+<div class="result">Velocidades depois (V, V): <b id="vout"></b></div>
+<div class="result">Momento antes / depois: <b id="p"></b></div>
+<div class="result">Energia antes / depois: <b id="k"></b></div>
+<div class="result">Variação da energia ΔK: <b id="dk"></b></div>
+<div class="result">Impulsos J1 / J2: <b id="j"></b></div>
+<div class="result">Força média: <b id="force"></b></div>
+<div class="result">Instante do choque tc: <b id="tc"></b></div>
+</div>
+<h3>Momento linear total</h3>
+<p>Antes: <span id="p1txt"></span></p><div class="bar"><span id="p1bar"></span></div>
+<p>Depois: <span id="p2txt"></span></p><div class="bar"><span id="p2bar"></span></div>
+<h3>Energia cinética total</h3>
+<p>Antes: <span id="k1txt"></span></p><div class="bar"><span id="k1bar"></span></div>
+<p>Depois: <span id="k2txt"></span></p><div class="bar"><span id="k2bar"></span></div>
+</section>
+<section>
+<h2>Fórmulas</h2>
+<p>Antes do choque: x(t) = x₀ + v·t</p>
+<p>Instante do choque: tc = [distância inicial entre centros − soma das meias-larguras] / (v1 − v2)</p>
+<p>Depois do choque: V = (m1·v1 + m2·v2) / (m1 + m2)</p>
+<p>Impulso: J = m·(V − v) | Força média: Fméd = |J| / Δt</p>
+</section>
+<script>
+const $=id=>document.getElementById(id), ids=["m1","m2","v1","v2","dt"];
+const fmt=n=>Number(n).toFixed(2).replace(".",",");
+let t=0,paused=false,last=0,model=null;
+function calc(){
+ const m1=+$("m1").value,m2=+$("m2").value,v1=+$("v1").value,v2=+$("v2").value,dt=+$("dt").value/1000;
+ // Larguras físicas proporcionais à raiz quadrada da massa.
+ const w1=.35*Math.sqrt(m1),w2=.35*Math.sqrt(m2);
+ const centerDistance=8; // distância inicial entre os centros (m)
+ const gap=centerDistance-(w1+w2)/2;
+ const collides=v1>v2;
+ const tc=collides?gap/(v1-v2):null;
+ const V=(m1*v1+m2*v2)/(m1+m2);
+ const p1=m1*v1+m2*v2,p2=(m1+m2)*V;
+ const k1=.5*m1*v1*v1+.5*m2*v2*v2,k2=.5*(m1+m2)*V*V;
+ return {m1,m2,v1,v2,dt,w1,w2,centerDistance,gap,collides,tc,V,p1,p2,k1,k2,dk:k2-k1,j1:m1*(V-v1),j2:m2*(V-v2)};
+}
+function bar(id,val,max){$(id).style.width=(max?Math.min(100,Math.abs(val)/max*100):0)+"%";}
+function update(){
+ model=calc();const d=model;
+ ids.forEach(id=>$(id+"out").textContent=fmt($(id).value));
+ if(!d.collides){$("message").textContent="Não ocorre colisão: para estes valores, v1 ≤ v2. Altere as velocidades.";["vin","vout","p","k","dk","j","force","tc"].forEach(id=>$(id).textContent="—");draw();return;}
+ $("message").textContent="Os blocos se aproximam com suas velocidades próprias. No instante tc, ficam unidos e seguem com velocidade V.";
+ $("vin").textContent=fmt(d.v1)+" / "+fmt(d.v2)+" m/s";
+ $("vout").textContent=fmt(d.V)+" / "+fmt(d.V)+" m/s";
+ $("p").textContent=fmt(d.p1)+" / "+fmt(d.p2)+" kg·m/s";
+ $("k").textContent=fmt(d.k1)+" / "+fmt(d.k2)+" J";
+ $("dk").textContent=fmt(d.dk)+" J";
+ $("j").textContent=fmt(d.j1)+" / "+fmt(d.j2)+" N·s";
+ $("force").textContent=fmt(Math.abs(d.j1)/d.dt)+" N";
+ $("tc").textContent=fmt(d.tc)+" s";
+ $("p1txt").textContent=fmt(d.p1)+" kg·m/s";$("p2txt").textContent=fmt(d.p2)+" kg·m/s";
+ $("k1txt").textContent=fmt(d.k1)+" J";$("k2txt").textContent=fmt(d.k2)+" J";
+ const mp=Math.max(Math.abs(d.p1),Math.abs(d.p2),.001),mk=Math.max(d.k1,d.k2,.001);
+ bar("p1bar",d.p1,mp);bar("p2bar",d.p2,mp);bar("k1bar",d.k1,mk);bar("k2bar",d.k2,mk);
+ draw();
+}
+const canvas=$("scene"),ctx=canvas.getContext("2d");
+function draw(){
+ const d=model||calc(),W=canvas.clientWidth||600,H=220,ratio=devicePixelRatio||1;
+ canvas.width=W*ratio;canvas.height=H*ratio;ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,W,H);
+ ctx.strokeStyle="#777";ctx.beginPath();ctx.moveTo(10,165);ctx.lineTo(W-10,165);ctx.stroke();
+ if(!d.collides){ctx.fillStyle="#222";ctx.fillText("Sem colisão para os valores escolhidos.",15,25);return;}
+ // Escala horizontal em pixels por metro. As larguras desenhadas são proporcionais às massas.
+ const px=Math.min((W-120)/12,65),x1Start=55,x2Start=x1Start+d.centerDistance*px;
+ const half1=d.w1*px/2,half2=d.w2*px/2;
+ let x1,x2,joined=t>=d.tc;
+ if(!joined){
+   // MRU independente: cada bloco usa seu próprio x(t)=x0+v*t.
+   x1=x1Start+d.v1*t*px;x2=x2Start+d.v2*t*px;
+ }else{
+   // A posição de contato é obtida pela mesma equação de MRU no instante tc.
+   const contact1=x1Start+d.v1*d.tc*px,contact2=x2Start+d.v2*d.tc*px;
+   const center=(contact1+contact2)/2+d.V*(t-d.tc)*px;
+   x1=center-(half1+half2)/2+half1;x2=center+(half1+half2)/2-half2;
+ }
+ const drawBlock=(x,half,color,label)=>{ctx.fillStyle=color;ctx.fillRect(x-half,120,2*half,42);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.fillText(label,x,145);};
+ if(joined){
+   const center=(x1+x2)/2;
+   ctx.fillStyle="#777";ctx.fillRect(center-half1-half2,120,2*(half1+half2),42);
+   ctx.fillStyle="#fff";ctx.textAlign="center";ctx.fillText("1 + 2",center,145);
+ }else{drawBlock(x1,half1,"#4779b8","1");drawBlock(x2,half2,"#d58a35","2");}
+ ctx.fillStyle="#222";ctx.textAlign="left";ctx.fillText("Tempo: "+fmt(t)+" s",12,20);
+ ctx.fillText(joined?"Após a colisão: movimento conjunto":"Antes da colisão: MRU",12,42);
+}
+function frame(ms){if(!last)last=ms;const delta=Math.min((ms-last)/1000,.04);last=ms;if(!paused&&model&&model.collides)t+=delta;draw();requestAnimationFrame(frame);}
+ids.forEach(id=>$(id).addEventListener("input",()=>{t=0;update();}));
+$("pause").onclick=()=>{paused=!paused;$("pause").textContent=paused?"Continuar":"Pausar";};
+$("reset").onclick=()=>{t=0;paused=false;$("pause").textContent="Pausar";draw();};
+window.addEventListener("resize",draw);update();requestAnimationFrame(frame);
+</script>
+</body></html>
